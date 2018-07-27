@@ -35,7 +35,6 @@ const std::string getCurrentSystemTime()
 	return std::string(date);
 }
 
-
 std::string print_money(std::string amount, unsigned int decimal_point)
 {
 	if (decimal_point == (unsigned int)-1)
@@ -87,6 +86,27 @@ void init_db()
 	}
 }
 
+unsigned long getLastHeight()
+{
+	unsigned long height = 0;
+	try {
+		shared_lock<shared_mutex> m(dbio_s_mu);    //读锁定，shared_loc
+		SQLiteDB db(WFC_WALLET_DBPATH);
+		std::stringstream sql;
+		sql << "select * from system_info limit 1";
+		SQLiteDB::Cursor cursor(db, sql.str().c_str());
+		while (cursor.read()) {
+			if (!cursor["height"]){
+				continue;
+			}	
+			height = strtoul(cursor["height"], nullptr, 0);		
+		}
+	}catch(...){
+	
+	}
+	
+	return height;	
+}
 bool listAddress(std::vector<wallet_info> &wallets)
 {
 	try {
@@ -207,6 +227,19 @@ bool wfc_write_address_db(const std::unordered_set<std::string> &addressSet)
 	return true;
 }
 
+bool wfc_write_system_db(unsigned long height)
+{
+	try {
+		unique_lock<shared_mutex> m(dbio_s_mu);
+		SQLiteDB db(WFC_WALLET_DBPATH, SQLITE_OPEN_READWRITE);
+		std::stringstream sql;
+		sql << "replace into system_info(id,height,last_update) values (1," << height << "," << getCurrentSystemTime() <<");";
+		db.exec(sql.str().c_str());
+	}catch(...){
+		return false;
+	}
+	return true;
+}
 void wfc_write_system_info()
 {
 	Json::Value system_info;
@@ -231,5 +264,4 @@ void wfc_write_system_info()
 	ofstream out("/home/wwwroot/wfc.dpifw.cn/system-info.js");
 
 	out << "var data1 = " << system_info.toStyledString() << endl;
-
 }

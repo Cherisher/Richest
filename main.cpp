@@ -84,14 +84,15 @@ static void parse_block_round(const unsigned long &blk_index, bool &error)
 }
 
 
-
 void thread_detect_address()
 {
     HttpClient httpclient(WFC_RPC_SERVER);
     wfcClient client(httpclient, JSONRPC_CLIENT_V1);
     unsigned long now_block_height;
+	block_height = std::max(getLastHeight(), block_height);
+	cout << "block_height: " << block_height << endl;
+	
     while (!stoped) {
-
         try {
             now_block_height = static_cast<unsigned long>(client.getblockcount());
             cout << block_height << " -> "<< now_block_height << endl;
@@ -154,8 +155,11 @@ void thread_detect_address()
         }
 
         block_height = now_block_height;
-        boost::this_thread::sleep(boost::posix_time::seconds(30));
+		wfc_write_system_db(block_height);
+		
         cout << __FUNCTION__ << endl;
+		break;
+		boost::this_thread::sleep(boost::posix_time::seconds(60));
     }
 }
 
@@ -168,21 +172,24 @@ void thread_detect_balance()
 
       wfc_write_system_info();
       cout << __FUNCTION__ <<":" << wallets.size() << endl;
-	break;
-      boost::this_thread::sleep(boost::posix_time::seconds(60));
+	  break;
+      boost::this_thread::sleep(boost::posix_time::seconds(3600));
   }
 }
 
 int main(int argc, char *argv[])
 {
     init_db();
-
-//    boost::thread t1(thread_detect_address);
+#if 0
+    boost::thread t1(thread_detect_address);
 
     boost::thread t2(thread_detect_balance);
 
-  //  t1.join();
+    t1.join();
     t2.join();
-
+#else
+	thread_detect_address();
+	thread_detect_balance();
+#endif
     return 0;
 }
