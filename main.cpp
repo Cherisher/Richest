@@ -1,17 +1,17 @@
 #include <boost/thread.hpp>
 #include <boost/thread/mutex.hpp>
 #include <fstream>
-#include <unordered_set>
 #include <iostream>
 #include <jsoncpp/json/json.h>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <jsonrpccpp/client/connectors/httpclient.h>
 
-#include "wfcclient.h"
 #include "WfcHelper.h"
-#include "threadpool.h"
 #include "sqlitedb.h"
+#include "threadpool.h"
+#include "wfcclient.h"
 
 using namespace std;
 using namespace boost;
@@ -49,11 +49,11 @@ static void parse_block_round(const unsigned long &blk_index, bool &error)
                 cout << "getrawtransaction: " << tx_hash << e.GetMessage() << endl;
                 continue;
 #if 0
-				 try{
-					 txinfo = client.gettransaction(tx_hash);
-					  }catch(jsonrpc::JsonRpcException &e){
-						  cout << "gettransaction: " << tx_hash << e.GetMessage() << endl;
-					  }
+				try{
+					txinfo = client.gettransaction(tx_hash);
+				}catch(jsonrpc::JsonRpcException &e){
+					cout << "gettransaction: " << tx_hash << e.GetMessage() << endl;
+				}
 #endif
             }
 
@@ -83,113 +83,104 @@ static void parse_block_round(const unsigned long &blk_index, bool &error)
     error = true;
 }
 
-
 void thread_detect_address()
 {
     HttpClient httpclient(WFC_RPC_SERVER);
     wfcClient client(httpclient, JSONRPC_CLIENT_V1);
     unsigned long now_block_height;
-	block_height = std::max(getLastHeight(), block_height);
-	cout << "block_height: " << block_height << endl;
-	
-    while (!stoped) {
-        try {
-            now_block_height = static_cast<unsigned long>(client.getblockcount());
-            cout << block_height << " -> "<< now_block_height << endl;
-        } catch (JsonRpcException &e) {
-            cout << "getblockcount: " << e.GetMessage() << endl;
-            continue;
-        }
+    block_height = std::max(getLastHeight(), block_height);
+    cout << "block_height: " << block_height << endl;
 
-        if(now_block_height <=block_height){
-          continue;
-        }
-        tools::threadpool &tpool = tools::threadpool::getInstance();
-        unsigned long threads = tpool.get_max_concurrency();
-
-        unsigned long blk_index;
-        int count = 1;
-        if (threads > 1) {
-            unsigned long rounds_size = now_block_height - block_height;
-
-            for (blk_index = 0; blk_index < rounds_size; blk_index += threads) {
-                if (stoped) {
-                    return;
-                }
-                std::deque<bool> error(threads);
-                unsigned long blk_height[threads];
-                unsigned long thread_num = std::min(threads, rounds_size - blk_index);
-                tools::threadpool::waiter waiter;
-                for (int j = 0; j < thread_num; ++j) {
-                    blk_height[j] = block_height + blk_index + j;
-                    tpool.submit(&waiter,
-                                 boost::bind(&parse_block_round, std::cref(blk_height[j]), std::ref(error[j])));
-                }
-                waiter.wait();
-                for (int j = 0; j < thread_num; ++j) {
-                    if (!error[j]) {
-                        cerr << "parse_block_round failed: block: " << blk_height[j] << endl;
-                    }
-                }
-                count++;
-                if (count % 1000 == 0) {
-                      wfc_write_address_db(addressList);
-                }
-            }
-        } else {
-            for (blk_index = block_height; blk_index < now_block_height; blk_index++) {
-                if (stoped) {
-                    return;
-                }
-
-                bool ret;
-                parse_block_round(blk_index, ret);
-                if (!ret) {
-                    cerr << "parse_block_round failed: block: " << blk_index << endl;
-                }
-                count++;
-                if(count % 1000 == 0){
-                    wfc_write_address_db(addressList);
-                }
-            }
-        }
-
-        block_height = now_block_height;
-		wfc_write_system_db(block_height);
-		
-        cout << __FUNCTION__ << endl;
-		break;
-		boost::this_thread::sleep(boost::posix_time::seconds(60));
+    try {
+        now_block_height = static_cast<unsigned long>(client.getblockcount());
+        cout << block_height << " -> " << now_block_height << endl;
+    } catch (JsonRpcException &e) {
+        cout << "getblockcount: " << e.GetMessage() << endl;
+        return;
     }
+
+    if (now_block_height <= block_height) {
+        return;
+    }
+
+    tools::threadpool &tpool = tools::threadpool::getInstance();
+    unsigned long threads = tpool.get_max_concurrency();
+
+    unsigned long blk_index;
+    int count = 1;
+    if (threads > 1) {
+        unsigned long rounds_size = now_block_height - block_height;
+
+        for (blk_index = 0; blk_index < rounds_size; blk_index += threads) {
+            if (stoped) {
+                return;
+            }
+            std::deque<bool> error(threads);
+            unsigned long blk_height[threads];
+            unsigned long thread_num = std::min(threads, rounds_size - blk_index);
+            tools::threadpool::waiter waiter;
+            for (int j = 0; j < thread_num; ++j) {
+                blk_height[j] = block_height + blk_index + j;
+                tpool.submit(&waiter, boost::bind(&parse_block_round, std::cref(blk_height[j]), std::ref(error[j])));
+            }
+            waiter.wait();
+            for (int j = 0; j < thread_num; ++j) {
+                if (!error[j]) {
+                    cerr << "parse_block_round failed: block: " << blk_height[j] << endl;
+                }
+            }
+            count++;
+            if (count % 1000 == 0) {
+                wfc_write_address_db(addressList);
+            }
+        }
+    } else {
+        for (blk_index = block_height; blk_index < now_block_height; blk_index++) {
+            if (stoped) {
+                return;
+            }
+
+            bool ret;
+            parse_block_round(blk_index, ret);
+            if (!ret) {
+                cerr << "parse_block_round failed: block: " << blk_index << endl;
+            }
+            count++;
+            if (count % 1000 == 0) {
+                wfc_write_address_db(addressList);
+            }
+        }
+    }
+
+    block_height = now_block_height;
+    wfc_write_system_db(block_height);
+
+    cout << __FUNCTION__ << endl;
 }
 
 void thread_detect_balance()
 {
-  while (!stoped) {
     std::vector<wallet_info> wallets;
-    if(listAddress(wallets))
-      wfc_write_balance_db(wallets);
+    if (listAddress(wallets))
+        wfc_write_balance_db(wallets);
 
-      wfc_write_system_info();
-      cout << __FUNCTION__ <<":" << wallets.size() << endl;
-	  break;
-      boost::this_thread::sleep(boost::posix_time::seconds(3600));
-  }
+    wfc_write_system_info();
+    cout << __FUNCTION__ << ":" << wallets.size() << endl;
 }
 
 int main(int argc, char *argv[])
 {
     init_db();
 #if 0
-    boost::thread t1(thread_detect_address);
+	boost::thread t1(thread_detect_address);
 
-    boost::thread t2(thread_detect_balance);
+	boost::thread t2(thread_detect_balance);
 
-    t1.join();
-    t2.join();
+	t1.join();
+	t2.join();
 #else
-	thread_detect_address();
-	thread_detect_balance();
+    thread_detect_address();
+    thread_detect_balance();
 #endif
     return 0;
 }

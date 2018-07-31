@@ -1,13 +1,12 @@
 #pragma once
-#include <sstream>
-#include <vector>
 #include <cstdint>
+#include <sstream>
 #include <unordered_set>
+#include <vector>
 class wfcClient;
-struct wallet_info
-{
-        std::string address;
-        double balance;
+struct wallet_info {
+    std::string address;
+    double balance;
 };
 
 #define WFC_RPC_SERVER "http://test:admin@127.0.0.1:9665"
@@ -25,4 +24,3 @@ bool wfc_write_balance_db(std::vector<wallet_info> &wallets);
 bool wfc_write_address_db(const std::unordered_set<std::string> &addressSet);
 bool wfc_write_system_db(unsigned long height);
 void wfc_write_system_info();
-
