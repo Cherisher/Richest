@@ -20,8 +20,12 @@ add_executable(wfc_richest
 sqlitedb.h
 wfcclient.h
 WfcHelper.h
+WfcInsight.h
+httpclient.h
+httpclient.cpp
 WfcHelper.cpp
 threadpool.cpp
+WfcInsight.cpp
 main.cpp
 )
 
@@ -33,4 +37,6 @@ pthread
 jsonrpccpp-common
 jsonrpccpp-client
 jsoncpp
+curl
+crypto
 )

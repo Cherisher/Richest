@@ -6,98 +6,85 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include <jsonrpccpp/client/connectors/httpclient.h>
-
 #include "WfcHelper.h"
-#include "sqlitedb.h"
+#include "WfcInsight.h"
+
 #include "threadpool.h"
-#include "wfcclient.h"
 
 using namespace std;
 using namespace boost;
-using namespace jsonrpc;
 
 std::unordered_set<std::string> addressList;
 
 static unsigned long block_height = 1;
 static bool stoped = false;
 
+static void detect_tx_vout(const Json::Value &vout)
+{
+    int vout_j, vout_size = vout.size();
+    for (vout_j = 0; vout_j < vout_size; vout_j++) {
+        if (!vout[vout_j].isMember("scriptPubKey") || !vout[vout_j]["scriptPubKey"].isObject() ||
+            !vout[vout_j]["scriptPubKey"].isMember("addresses") ||
+            !vout[vout_j]["scriptPubKey"]["addresses"].isArray()) {
+            // cerr << "Error transaction:" <<  vout[vout_j].toStyledString() << endl;
+            continue;
+        }
+        const Json::Value &addr = vout[vout_j]["scriptPubKey"]["addresses"];
+        for (int idx = 0; idx < addr.size(); idx++) {
+            std::string address = addr[idx].asString();
+            //  cout << address << endl;
+            addressList.insert(address);
+        }
+    }
+}
+
 static void parse_block_round(const unsigned long &blk_index, bool &error)
 {
     error = false;
-    HttpClient httpclient(WFC_RPC_SERVER);
-    wfcClient client(httpclient, JSONRPC_CLIENT_V1);
-    try {
-        std::string hash = client.getblockhash(blk_index);
-        cout << "block hash: " << hash << endl;
-        Json::Value result = client.getblock(hash, 1);
-        if (!result.isMember("tx") || !result["tx"].isArray()) {
-            cout << ("block index: " + std::to_string(blk_index) + " hash: " + hash + " Bad block");
-            return;
-        }
-
-        const Json::Value &tx = result["tx"];
-        int tx_i, tx_size = tx.size();
-        cout << "blk_index: " << blk_index << "\t" << tx_size << endl;
-        for (tx_i = 0; tx_i < tx_size; tx_i++) {
-            std::string tx_hash = tx[tx_i].asString();
-            Json::Value txinfo;
-
-            try {
-                txinfo = client.getrawtransaction(tx_hash, true);
-            } catch (jsonrpc::JsonRpcException &e) {
-                cout << "getrawtransaction: " << tx_hash << e.GetMessage() << endl;
-                continue;
-#if 0
-				try{
-					txinfo = client.gettransaction(tx_hash);
-				}catch(jsonrpc::JsonRpcException &e){
-					cout << "gettransaction: " << tx_hash << e.GetMessage() << endl;
-				}
-#endif
-            }
-
-            if (txinfo.isMember("vout") && txinfo["vout"].isArray()) {
-                const Json::Value &vout = txinfo["vout"];
-                int vout_j, vout_size = vout.size();
-                for (vout_j = 0; vout_j < vout_size; vout_j++) {
-                    if (!vout[vout_j].isMember("scriptPubKey") || !vout[vout_j]["scriptPubKey"].isObject() ||
-                        !vout[vout_j]["scriptPubKey"].isMember("addresses") ||
-                        !vout[vout_j]["scriptPubKey"]["addresses"].isArray()) {
-                        // cerr << "Error transaction:" <<  vout[vout_j].toStyledString() << endl;
-                        continue;
-                    }
-                    const Json::Value &addr = vout[vout_j]["scriptPubKey"]["addresses"];
-                    for (int idx = 0; idx < addr.size(); idx++) {
-                        std::string address = addr[idx].asString();
-                        addressList.insert(address);
-                    }
-                }
-            }
-        }
-
-    } catch (jsonrpc::JsonRpcException &e) {
-        cerr << __FUNCTION__ << ": " << e.GetMessage() << endl;
+    WfcInsight insight;
+    std::string hash;
+    Json::Value block;
+    cout << "blk_index: " << blk_index << endl;
+    if (!insight.getBlockHash(hash, blk_index) || !insight.getBlock(block, hash)) {
         return;
+    }
+    if (block.isMember("tx") && block["tx"].isArray()) {
+        int i, tx_size = block["tx"].size();
+        for (i = 0; i < tx_size; i++) {
+            std::string txid;
+            txid = block["tx"][i].asString();
+            Json::Value tx;
+            if (insight.getTx(tx, txid)) {
+                // cout << tx.toStyledString() << endl;
+                if (tx.isMember("vout") && tx["vout"].isArray()) {
+                    detect_tx_vout(tx["vout"]);
+                }
+            } else {
+                cerr << ("txid: <" + txid + "> get failed.");
+            }
+        }
+    } else {
+        cerr << ("block: <" + std::to_string(blk_index) + "> bad block.");
     }
     error = true;
 }
 
 void thread_detect_address()
 {
-    HttpClient httpclient(WFC_RPC_SERVER);
-    wfcClient client(httpclient, JSONRPC_CLIENT_V1);
     unsigned long now_block_height;
     block_height = std::max(getLastHeight(), block_height);
     cout << "block_height: " << block_height << endl;
 
-    try {
-        now_block_height = static_cast<unsigned long>(client.getblockcount());
-        cout << block_height << " -> " << now_block_height << endl;
-    } catch (JsonRpcException &e) {
-        cout << "getblockcount: " << e.GetMessage() << endl;
-        return;
+    WfcInsight insight;
+    Json::Value info;
+    if (insight.getInfo(info)) {
+        // cout << info.toStyledString() << endl;
+        now_block_height = (unsigned long)info["blocks"].asUInt64();
+    } else {
+        now_block_height = 0;
     }
+
+    cout << block_height << " -> " << now_block_height << endl;
 
     if (now_block_height <= block_height) {
         return;
@@ -153,7 +140,6 @@ void thread_detect_address()
     }
 
     block_height = now_block_height;
-    wfc_write_system_db(block_height);
 
     cout << __FUNCTION__ << endl;
 }
@@ -161,26 +147,75 @@ void thread_detect_address()
 void thread_detect_balance()
 {
     std::vector<wallet_info> wallets;
-    if (listAddress(wallets))
+    if (listAddress(wallets)) {
+        WfcInsight insight;
+        for (auto &wallet : wallets) {
+            double balance;
+            if (insight.getBalance(balance, wallet.address)) {
+                wallet.balance = balance;
+                cout << wallet.address << "\t" << wallet.balance << endl;
+            } else {
+                wallet.balance = 0.0;
+                cout << wallet.address << "\t"
+                     << "getBalance failed." << endl;
+            }
+        }
         wfc_write_balance_db(wallets);
+    }
 
     wfc_write_system_info();
     cout << __FUNCTION__ << ":" << wallets.size() << endl;
 }
 
+void test()
+{
+
+    WfcInsight insight;
+    Json::Value info;
+    if (!insight.getInfo(info)) {
+        exit(-1);
+    }
+    cout << info.toStyledString() << endl;
+    uint64_t height = info["blocks"].asUInt64();
+
+    std::string hash;
+
+    if (!insight.getBlockHash(hash, height)) {
+        exit(-2);
+    }
+
+    Json::Value block;
+
+    if (!insight.getBlock(block, hash)) {
+        exit(-3);
+    }
+
+    cout << block.toStyledString() << endl;
+    if (block.isMember("tx") && block["tx"].isArray()) {
+        int i, tx_size = block["tx"].size();
+        for (i = 0; i < tx_size; i++) {
+            std::string txid;
+            txid = block["tx"][i].asString();
+            Json::Value tx;
+            if (insight.getTx(tx, txid)) {
+                cout << tx.toStyledString() << endl;
+                if (tx.isMember("vout") && tx["vout"].isArray()) {
+                    detect_tx_vout(tx["vout"]);
+                }
+            }
+        }
+    }
+
+    exit(0);
+}
+
 int main(int argc, char *argv[])
 {
-    init_db();
-#if 0
-	boost::thread t1(thread_detect_address);
-
-	boost::thread t2(thread_detect_balance);
-
-	t1.join();
-	t2.join();
-#else
+    // test();
+    wfc_init_db();
     thread_detect_address();
     thread_detect_balance();
-#endif
+
+    wfc_write_system_db(block_height);
     return 0;
 }

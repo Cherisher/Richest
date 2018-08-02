@@ -1,4 +1,5 @@
 #include "WfcHelper.h"
+#include "httpclient.h"
 #include "sqlitedb.h"
 #include "wfcclient.h"
 #include <algorithm>
@@ -7,7 +8,6 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <jsonrpccpp/client/connectors/httpclient.h>
 #include <sstream>
 #include <sys/time.h>
 #include <vector>
@@ -31,58 +31,6 @@ const std::string getCurrentSystemTime()
     sprintf(date, "%d-%02d-%02d %02d:%02d:%02d", (int)ptm->tm_year + 1900, (int)ptm->tm_mon + 1, (int)ptm->tm_mday,
             (int)ptm->tm_hour, (int)ptm->tm_min, (int)ptm->tm_sec);
     return std::string(date);
-}
-
-std::string print_money(std::string amount, unsigned int decimal_point)
-{
-    if (decimal_point == (unsigned int)-1)
-        decimal_point = 8;
-
-    if (amount.size() < decimal_point + 1) {
-        amount.insert(0, decimal_point + 1 - amount.size(), '0');
-    }
-
-    if (decimal_point > 0)
-        amount.insert(amount.size() - decimal_point, ".");
-
-    // just discard '0' at end
-    std::size_t found;
-    found = amount.find(".");
-    if (found != std::string::npos) {
-        found = amount.find_last_not_of("0");
-        if (found != std::string::npos) {
-            amount.erase(found + 1);
-            if (amount.back() == '.') {
-                amount.pop_back();
-            }
-        } else {
-            // amount.clear();
-            amount = "0";
-        }
-    }
-
-    return amount;
-}
-
-std::string print_money(uint64_t amount, unsigned int decimal_point)
-{
-    std::stringstream ss;
-    ss << amount;
-    return print_money(ss.str(), decimal_point);
-}
-
-void init_db()
-{
-    try {
-        SQLiteDB db(WFC_WALLET_DBPATH, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE);
-        db.exec("create table if not exists wallet_info(id INTEGER PRIMARY KEY AUTOINCREMENT, address TEXT NOT NULL, "
-                "amount REAL DEFAULT 0.0)");
-        db.exec("create table if not exists system_info(id INT PRIMARY KEY, height INTEGER, last_update TEXT)");
-        db.exec("create unique  index if not exists address_index on wallet_info(address)");
-        db.exec("PRAGMA synchronous = OFF; ");
-    } catch (...) {
-        cerr << "init_db failed!!!" << endl;
-    }
 }
 
 unsigned long getLastHeight()
@@ -129,34 +77,22 @@ bool listAddress(std::vector<wallet_info> &wallets)
     return true;
 }
 
-double getBalance(wfcClient &client, const std::string &address)
+void wfc_init_db()
 {
-    double balance = 0.0;
     try {
-        Json::Value req;
-        Json::Value addr;
-        addr.append(address);
-        req["addresses"] = addr;
-        // cout << req.toStyledString() << endl;
-        Json::Value result;
-        result = client.getaddressbalance(req);
-        if (result.isMember("balance") && result["balance"].isNumeric()) {
-            balance = strtold(print_money(result["balance"].asUInt64()).c_str(), nullptr);
-        }
-        // cout << __FUNCTION__ << ":" << address << "\t" << balance << endl;
-    } catch (JsonRpcException &e) {
-        cerr << "getaddressbalance: " << address << " failed: " << e.GetMessage() << endl;
+        SQLiteDB db(WFC_WALLET_DBPATH, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE);
+        db.exec("create table if not exists wallet_info(id INTEGER PRIMARY KEY AUTOINCREMENT, address TEXT NOT NULL, "
+                "amount REAL DEFAULT 0.0)");
+        db.exec("create table if not exists system_info(id INT PRIMARY KEY, height INTEGER, last_update TEXT)");
+        db.exec("create unique  index if not exists address_index on wallet_info(address)");
+        db.exec("PRAGMA synchronous = OFF; ");
+    } catch (...) {
+        cerr << "init_db failed!!!" << endl;
     }
-    return balance;
 }
 
 bool wfc_write_balance_db(std::vector<wallet_info> &wallets)
 {
-    HttpClient httpclient(WFC_RPC_SERVER);
-    wfcClient client(httpclient, JSONRPC_CLIENT_V1);
-    for (auto &wallet : wallets) {
-        wallet.balance = getBalance(client, wallet.address);
-    }
     sort(wallets.begin(), wallets.end(), [](wallet_info &a, wallet_info &b) { return a.balance > b.balance; });
 
     try {
@@ -234,8 +170,8 @@ bool wfc_write_system_db(unsigned long height)
         unique_lock<shared_mutex> m(dbio_s_mu);
         SQLiteDB db(WFC_WALLET_DBPATH, SQLITE_OPEN_READWRITE);
         std::stringstream sql;
-        sql << "replace into system_info(id,height,last_update) values (1," << height << "," << getCurrentSystemTime()
-            << ");";
+        sql << "replace into system_info(id,height,last_update) values (1," << height << ","
+            << /*getCurrentSystemTime()*/ time(NULL) << ");";
         cout << sql.str() << endl;
         db.exec(sql.str().c_str());
     } catch (...) {
@@ -249,10 +185,10 @@ void wfc_write_system_info()
     Json::Value system_info;
     Json::Value item1, item2, item3, item4;
     item1["modname"] = "WFC价格";
-    item1["value"] = "￥0.08";
+    item1["value"] = "￥0.03";
 
     item2["modname"] = "涨幅(24h)";
-    item2["value"] = "100%";
+    item2["value"] = "-100%";
 
     item3["modname"] = "流通量";
     item3["value"] = "1.68亿";
