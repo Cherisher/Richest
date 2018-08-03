@@ -8,10 +8,16 @@
 struct wallet_info {
     std::string address;
     double balance;
+    int refresh;
 };
-
+#if 1
 #define WFC_WALLET_DBPATH "/home/wwwroot/wfc.dpifw.cn/test.db"
+#define WFC_SYSTEM_INFOPATH "/home/wwwroot/wfc.dpifw.cn/system-info.js"
+#else
+#define WFC_WALLET_DBPATH "test.db"
+#define WFC_SYSTEM_INFOPATH "system-info.js"
 
+#endif
 const std::string getCurrentSystemTime();
 
 unsigned long getLastHeight();

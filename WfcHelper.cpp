@@ -18,8 +18,8 @@ using namespace std;
 using namespace jsonrpc;
 using namespace boost;
 
-#define INSERT_FMT "replace into wallet_info (id, address,amount) values (?, ?, ?)"
-#define ADDRESS_INSERT_FMT "replace into wallet_info (address) values (?)"
+#define INSERT_FMT "replace into wallet_info (id, address,amount,refresh) values (?, ?, ?, ?)"
+#define ADDRESS_INSERT_FMT "replace into wallet_info (address,refresh) values (?,?)"
 
 shared_mutex dbio_s_mu; //全局shared_mutex对象
 
@@ -59,16 +59,17 @@ bool listAddress(std::vector<wallet_info> &wallets)
         shared_lock<shared_mutex> m(dbio_s_mu); //读锁定，shared_loc
         SQLiteDB db(WFC_WALLET_DBPATH);
         std::stringstream sql;
-        sql << "select address from wallet_info";
+        sql << "select address,refresh from wallet_info";
         SQLiteDB::Cursor cursor(db, sql.str().c_str());
         while (cursor.read()) {
-            if (!cursor["address"]) {
+            if (!cursor["address"] || !cursor["refresh"]) {
                 continue;
             }
 
             wallet_info wallet;
             wallet.address = cursor["address"];
-            wallet.balance = 0.0;
+            wallet.balance = cursor["balance"] ? strtold(cursor["balance"], nullptr) : 0;
+            wallet.refresh = atoi(cursor["refresh"]);
             wallets.emplace_back(wallet);
         }
     } catch (...) {
@@ -82,7 +83,7 @@ void wfc_init_db()
     try {
         SQLiteDB db(WFC_WALLET_DBPATH, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE);
         db.exec("create table if not exists wallet_info(id INTEGER PRIMARY KEY AUTOINCREMENT, address TEXT NOT NULL, "
-                "amount REAL DEFAULT 0.0)");
+                "amount REAL DEFAULT 0.0, refresh INTEGER)");
         db.exec("create table if not exists system_info(id INT PRIMARY KEY, height INTEGER, last_update TEXT)");
         db.exec("create unique  index if not exists address_index on wallet_info(address)");
         db.exec("PRAGMA synchronous = OFF; ");
@@ -112,13 +113,14 @@ bool wfc_write_balance_db(std::vector<wallet_info> &wallets)
                 sqlite3_bind_int(stmt, 1, i);
                 sqlite3_bind_text(stmt, 2, wallet.address.c_str(), wallet.address.length(), SQLITE_TRANSIENT);
                 sqlite3_bind_double(stmt, 3, wallet.balance);
+                sqlite3_bind_int(stmt, 4, 0);
 
                 if (sqlite3_step(stmt) != SQLITE_DONE) {
                     cerr << "Error insert "
                          << ": " << wallet.address << "\t" << wallet.balance << endl;
                 } else {
-		    i++;
-		}
+                    i++;
+                }
             }
             db.exec("COMMIT;");
         } catch (...) {
@@ -147,6 +149,7 @@ bool wfc_write_address_db(const std::unordered_set<std::string> &addressSet)
             for (const auto &address : addressSet) {
                 sqlite3_reset(stmt);
                 sqlite3_bind_text(stmt, 1, address.c_str(), address.length(), SQLITE_TRANSIENT);
+                sqlite3_bind_int(stmt, 2, 1);
                 if (sqlite3_step(stmt) != SQLITE_DONE) {
                     cerr << "Error insert " << address << " failed." << endl;
                 }
@@ -203,7 +206,7 @@ void wfc_write_system_info()
     system_info["list"].append(item3);
     system_info["list"].append(item4);
 
-    ofstream out("/home/wwwroot/wfc.dpifw.cn/system-info.js");
+    ofstream out(WFC_SYSTEM_INFOPATH);
 
     out << "var data1 = " << system_info.toStyledString() << endl;
 }
