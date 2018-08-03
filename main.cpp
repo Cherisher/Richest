@@ -173,7 +173,8 @@ void thread_detect_balance()
     if (listAddress(wallets)) {
         WfcInsight insight;
         for (auto &wallet : wallets) {
-            if (!wallet.refresh) {
+            if (wallet.refresh == 0) {
+                cout << wallet.address << "\t" << wallet.balance << " no need update." << endl;
                 continue;
             }
             double balance;
