@@ -109,14 +109,16 @@ bool wfc_write_balance_db(std::vector<wallet_info> &wallets)
                 sqlite3_reset(stmt);
                 // 此参数有两个常数，SQLITE_STATIC告诉sqlite3_bind_text函数字符串为常量，可以放心使用；
                 // 而SQLITE_TRANSIENT会使得sqlite3_bind_text函数对字符串做一份拷贝。一般使用这两个常量参数来调用sqlite3_bind_text。
-                sqlite3_bind_int(stmt, 1, i++);
+                sqlite3_bind_int(stmt, 1, i);
                 sqlite3_bind_text(stmt, 2, wallet.address.c_str(), wallet.address.length(), SQLITE_TRANSIENT);
                 sqlite3_bind_double(stmt, 3, wallet.balance);
 
                 if (sqlite3_step(stmt) != SQLITE_DONE) {
                     cerr << "Error insert "
                          << ": " << wallet.address << "\t" << wallet.balance << endl;
-                }
+                } else {
+		    i++;
+		}
             }
             db.exec("COMMIT;");
         } catch (...) {

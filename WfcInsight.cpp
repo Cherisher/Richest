@@ -1,8 +1,14 @@
 #include "WfcInsight.h"
 
-WfcInsight::WfcInsight() : m_path_root("https://insight.wificoin.club/insight-api")
+#if 0
+#define DEFAULT_INSIGHT_URL "https://wfc.xyblock.net"
+#else
+#define DEFAULT_INSIGHT_URL "https://insight.wificoin.club"
+#endif
+WfcInsight::WfcInsight() : m_path_root(DEFAULT_INSIGHT_URL)
 {
     client.AddHeader("Connection", "close");
+    m_path_root.append("/insight-api");
 }
 WfcInsight::WfcInsight(const std::string &path_root) : m_path_root(path_root)
 {

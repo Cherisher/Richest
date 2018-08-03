@@ -83,6 +83,7 @@ void thread_detect_address()
     } else {
         now_block_height = 0;
     }
+    now_block_height = min(now_block_height, block_height+10000);
 
     cout << block_height << " -> " << now_block_height << endl;
 
