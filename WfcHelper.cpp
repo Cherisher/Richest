@@ -59,16 +59,15 @@ bool listAddress(std::vector<wallet_info> &wallets)
         shared_lock<shared_mutex> m(dbio_s_mu); //读锁定，shared_loc
         SQLiteDB db(WFC_WALLET_DBPATH);
         std::stringstream sql;
-        sql << "select address,refresh from wallet_info";
+        sql << "select address,amount,refresh from wallet_info";
         SQLiteDB::Cursor cursor(db, sql.str().c_str());
         while (cursor.read()) {
             if (!cursor["address"] || !cursor["refresh"]) {
                 continue;
             }
-
             wallet_info wallet;
             wallet.address = cursor["address"];
-            wallet.balance = cursor["balance"] ? strtold(cursor["balance"], nullptr) : 0;
+            wallet.balance = cursor["amount"] ? strtold(cursor["amount"], nullptr) : 0;
             wallet.refresh = atoi(cursor["refresh"]);
             wallets.emplace_back(wallet);
         }
