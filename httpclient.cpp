@@ -166,9 +166,8 @@ bool HttpClient::doHttpGetRequest(const std::string &url, Json::Value &root,
     curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &s);
 
     res = curl_easy_perform(m_curl);
-
-    result = s.ptr;
     if (s.ptr) {
+        result.assign(s.ptr, s.len);
         free(s.ptr);
     }
 
@@ -197,9 +196,9 @@ bool HttpClient::doHttpPostRequest(const std::string &url, const std::string &pa
     curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &s);
 
     res = curl_easy_perform(m_curl);
-
-    result = s.ptr;
+    
     if (s.ptr) {
+        result.assign(s.ptr, s.len);
         free(s.ptr);
     }
 
@@ -229,10 +228,9 @@ bool HttpClient::doHttpDeleteRequest(const std::string &url, const std::string &
     curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &s);
 
     res = curl_easy_perform(m_curl);
-
-    result = s.ptr;
-
+    
     if (s.ptr) {
+        result.assign(s.ptr, s.len);
         free(s.ptr);
     }
     if (headers) {
